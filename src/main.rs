@@ -1,29 +1,23 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::io::{BufReader, Read};
+
+use crate::command_line::CommadnLine;
+
+mod command_line;
 
 fn main() {
-    let mut user_input = [0u8; 512];
-    let mut reader = BufReader::new(io::stdin());
-
+    let mut cli = CommadnLine::new();
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
-
-        let bytes_len = reader.read(&mut user_input).unwrap();
-        let user_input = &user_input[..bytes_len - 1]
-            .split(|p| p == " ".as_bytes().first().unwrap())
-            .collect::<Vec<_>>();
-        let cmd = user_input.first().unwrap();
+        cli.write("$ ");
+        let (cmd, args) = cli.read().parse();
         match &cmd[..] {
             b"exit" => {
                 return;
             }
             b"echo" => {
-                let space = b" ".to_vec();
-                let args = user_input[1..].to_vec().join(space.first().unwrap());
-                println!("{}", String::from_utf8(args).unwrap());
+                println!("{}", String::from_utf8_lossy(&args));
             }
+            b"type" => {}
             _ => {
                 println!(
                     "{}: command not found",
