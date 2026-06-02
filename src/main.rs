@@ -15,14 +15,30 @@ fn main() {
                 return;
             }
             b"echo" => {
-                println!("{}", String::from_utf8_lossy(&args));
+                // println!("{}", String::from_utf8_lossy(&args));
+                cli.write_line(&String::from_utf8_lossy(&args));
             }
-            b"type" => {}
+            b"type" => match args {
+                val if val == "exit".as_bytes()
+                    || val == "echo".as_bytes()
+                    || val == "type".as_bytes() =>
+                {
+                    cli.write_line(&format!(
+                        "{} is a shell builtin",
+                        String::from_utf8(val).unwrap()
+                    ));
+                    // println!("{} is a shell builtin", String::from_utf8(val).unwrap());
+                }
+                _ => {
+                    // println!("{}: not found", String::from_utf8(args).unwrap());
+                    cli.write_line(&format!("{}: not found", String::from_utf8(args).unwrap()));
+                }
+            },
             _ => {
-                println!(
+                cli.write_line(&format!(
                     "{}: command not found",
                     String::from_utf8(cmd.to_vec()).unwrap()
-                )
+                ));
             }
         }
     }

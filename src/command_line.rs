@@ -21,6 +21,13 @@ impl CommadnLine {
         self
     }
 
+    pub(crate) fn write_line(&mut self, arg: &str) -> &Self {
+        self.writer.write(&arg.as_bytes()).unwrap();
+        self.writer.write(b"\n").unwrap();
+        self.writer.flush().unwrap();
+        self
+    }
+
     pub(crate) fn read(&mut self) -> &Self {
         let mut buf = [0u8; 512];
         let bytes_len = self.reader.read(&mut buf).unwrap();
