@@ -1,10 +1,11 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::{env, path::Path};
 
-use crate::command_line::CommadnLine;
+use crate::{cmd::Command, command_line::CommadnLine};
 
+mod cmd;
 mod command_line;
+mod path;
 
 fn main() {
     let mut cli = CommadnLine::new();
@@ -45,39 +46,4 @@ fn main() {
             }
         }
     }
-}
-
-pub(crate) enum Command {
-    Exit,
-    Echo,
-    Type,
-    Exec(String),
-    Unknown,
-}
-
-impl Command {
-    fn from_bytes(cmd: Vec<u8>) -> Command {
-        match cmd.as_slice() {
-            b"exit" => Command::Exit,
-            b"echo" => Command::Echo,
-            b"type" => Command::Type,
-            command if let Some(path) = is_executable(command) => Command::Exec(path),
-            _ => Command::Unknown,
-        }
-    }
-}
-
-fn is_executable(command: &[u8]) -> Option<String> {
-    let path = env::var("PATH").unwrap();
-    let cmd = String::from_utf8(command.to_vec()).unwrap();
-
-    let paths: Vec<String> = path.split_terminator(":").map(str::to_owned).collect();
-    for path in paths {
-        let p = Path::new(&path).join(cmd.clone());
-        if p.exists() {
-            return Some(cmd);
-        }
-    }
-
-    None
 }
