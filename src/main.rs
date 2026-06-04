@@ -1,6 +1,6 @@
-use std::env;
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::{env, ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
 
 use crate::{cmd::Command, command_line::CommadnLine};
 
@@ -30,6 +30,17 @@ fn main() {
             }
             Command::Pwd => {
                 cli.write_line(&env::current_dir().unwrap().display().to_string());
+            }
+            Command::Cd => {
+                let path = Path::new(OsStr::from_bytes(args.as_slice()));
+                if path.exists() {
+                    env::set_current_dir(path).unwrap();
+                } else {
+                    cli.write_line(&format!(
+                        "cd: {}: No such file or directory",
+                        String::from_utf8(args).unwrap()
+                    ));
+                }
             }
             Command::Exec(cmd) => {
                 let output = std::process::Command::new("sh")

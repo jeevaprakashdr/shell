@@ -5,6 +5,7 @@ pub(crate) enum Command {
     Echo,
     Type,
     Pwd,
+    Cd,
     Exec(String),
     Unknown,
 }
@@ -16,6 +17,7 @@ impl Command {
             b"echo" => Command::Echo,
             b"type" => Command::Type,
             b"pwd" => Command::Pwd,
+            b"cd" => Command::Cd,
             command if let Some(cmd) = path::is_executable(command) => Command::Exec(cmd),
             _ => Command::Unknown,
         }
