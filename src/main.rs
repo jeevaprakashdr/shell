@@ -1,3 +1,4 @@
+use std::env;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
@@ -26,6 +27,9 @@ fn main() {
                     .output()
                     .unwrap();
                 cli.write(&String::from_utf8(output.stdout).unwrap());
+            }
+            Command::Pwd => {
+                cli.write_line(&env::current_dir().unwrap().display().to_string());
             }
             Command::Exec(cmd) => {
                 let output = std::process::Command::new("sh")
