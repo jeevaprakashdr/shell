@@ -32,6 +32,14 @@ fn main() {
                 cli.write_line(&env::current_dir().unwrap().display().to_string());
             }
             Command::Cd => {
+                if args == b"~" {
+                    let home = env::home_dir()
+                        .map(|protobuf| protobuf.display().to_string())
+                        .unwrap_or("/".to_string());
+                    env::set_current_dir(home).unwrap();
+                    continue;
+                }
+
                 let path = Path::new(OsStr::from_bytes(args.as_slice()));
                 if path.exists() {
                     env::set_current_dir(path).unwrap();
