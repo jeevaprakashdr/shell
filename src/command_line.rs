@@ -52,6 +52,7 @@ impl CommadnLine {
             SingleQuote,
             DoubleQuote,
             Space,
+            Backslash,
             Alphanumeric,
         }
 
@@ -98,6 +99,30 @@ impl CommadnLine {
                         current_state = State::Space;
                         current_byte = iterator.next()
                     }
+                    Some(b'\\') => {
+                        current_state = State::Backslash;
+                        current_byte = iterator.next()
+                    }
+                    Some(_) => {
+                        current_state = State::Alphanumeric;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    None => {
+                        break;
+                    }
+                },
+                State::Backslash => match current_byte {
+                    Some(b' ') => {
+                        current_state = State::Space;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    Some(b'\\') => {
+                        current_state = State::Alphanumeric;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
                     Some(_) => {
                         current_state = State::Alphanumeric;
                         output.push(current_byte.unwrap());
@@ -119,6 +144,10 @@ impl CommadnLine {
                     Some(b' ') => {
                         current_state = State::Space;
                         output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    Some(b'\\') => {
+                        current_state = State::Backslash;
                         current_byte = iterator.next()
                     }
                     Some(_) => {
@@ -167,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_single_quote() {
+    fn parse_text_with_single_quote() {
         let value = [
             ("'hallo world'", "hallo world"),
             ("'hallo   world'", "hallo   world"),
@@ -182,8 +211,24 @@ mod tests {
     }
 
     #[test]
-    fn parse_double_quote() {
+    fn parse_text_with_double_quote() {
         let value = [("\"shell's test\"", "shell's test")];
+
+        for (input, expected) in value {
+            let result = CommadnLine::parse_string(input.as_bytes().to_vec());
+            assert_eq!(result, expected.as_bytes().to_vec());
+        }
+    }
+
+    #[test]
+    fn parse_text_with_backslash() {
+        let value = [
+            ("three\\ \\ \\ spaces", "three   spaces"),
+            ("before\\     after", "before after"),
+            ("test\\nexample", "testnexample"),
+            ("hello\\\\world", "hello\\world"),
+            ("\\'hello\\'", "'hello'"),
+        ];
 
         for (input, expected) in value {
             let result = CommadnLine::parse_string(input.as_bytes().to_vec());
