@@ -49,8 +49,9 @@ impl CommadnLine {
         let mut current_state = State::Alphanumeric;
 
         enum State {
-            Space,
             SingleQuote,
+            DoubleQuote,
+            Space,
             Alphanumeric,
         }
 
@@ -70,9 +71,27 @@ impl CommadnLine {
                         break;
                     }
                 },
-                State::Space => match current_byte {
-                    Some(b'\'') => {
+                State::DoubleQuote => match current_byte {
+                    Some(b'\"') => {
                         current_state = State::Alphanumeric;
+                        current_byte = iterator.next()
+                    }
+                    Some(_) => {
+                        current_state = State::DoubleQuote;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    None => {
+                        break;
+                    }
+                },
+                State::Space => match current_byte {
+                    Some(b'\"') => {
+                        current_state = State::DoubleQuote;
+                        current_byte = iterator.next()
+                    }
+                    Some(b'\'') => {
+                        current_state = State::SingleQuote;
                         current_byte = iterator.next()
                     }
                     Some(b' ') => {
@@ -91,6 +110,10 @@ impl CommadnLine {
                 State::Alphanumeric => match current_byte {
                     Some(b'\'') => {
                         current_state = State::SingleQuote;
+                        current_byte = iterator.next()
+                    }
+                    Some(b'\"') => {
+                        current_state = State::DoubleQuote;
                         current_byte = iterator.next()
                     }
                     Some(b' ') => {
@@ -151,6 +174,16 @@ mod tests {
             ("'hallo''world'", "halloworld"),
             ("hallo''world", "halloworld"),
         ];
+
+        for (input, expected) in value {
+            let result = CommadnLine::parse_string(input.as_bytes().to_vec());
+            assert_eq!(result, expected.as_bytes().to_vec());
+        }
+    }
+
+    #[test]
+    fn parse_double_quote() {
+        let value = [("\"shell's test\"", "shell's test")];
 
         for (input, expected) in value {
             let result = CommadnLine::parse_string(input.as_bytes().to_vec());
