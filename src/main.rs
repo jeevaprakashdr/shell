@@ -18,7 +18,8 @@ fn main() {
                 return;
             }
             Command::Echo => {
-                cli.write_line(&String::from_utf8_lossy(&args));
+                let output = CommadnLine::parse_string(args);
+                cli.write_line(&String::from_utf8(output).unwrap());
             }
             Command::Type => {
                 let output = std::process::Command::new("sh")
