@@ -46,20 +46,47 @@ impl CommadnLine {
         let mut output = Vec::new();
         let mut iterator = string_bytes.into_iter();
         let mut current_byte = iterator.next();
-        let mut current_state = State::Alphanumeric;
+        let mut current_state = State::Start;
 
         #[derive(Debug)]
         enum State {
+            Start,
             SingleQuote,
             DoubleQuote,
-            Space,
             Backslash,
+            DoubleQuoteBackslash,
+            Space,
             Alphanumeric,
+            End,
         }
 
         loop {
-            println!("{:?}", current_state);
             match current_state {
+                State::Start => match current_byte {
+                    Some(b'\'') => {
+                        current_state = State::SingleQuote;
+                        current_byte = iterator.next()
+                    }
+                    Some(b'"') => {
+                        current_state = State::DoubleQuote;
+                        current_byte = iterator.next()
+                    }
+                    Some(b' ') => {
+                        current_state = State::Space;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    Some(b'\\') => {
+                        current_state = State::Backslash;
+                        current_byte = iterator.next()
+                    }
+                    Some(_) => {
+                        current_state = State::Alphanumeric;
+                        output.push(current_byte.unwrap());
+                        current_byte = iterator.next()
+                    }
+                    None => current_state = State::End,
+                },
                 State::SingleQuote => match current_byte {
                     Some(b'\'') => {
                         current_state = State::Alphanumeric;
@@ -79,6 +106,10 @@ impl CommadnLine {
                         current_state = State::Alphanumeric;
                         current_byte = iterator.next()
                     }
+                    Some(b'\\') => {
+                        current_state = State::DoubleQuoteBackslash;
+                        current_byte = iterator.next();
+                    }
                     Some(_) => {
                         current_state = State::DoubleQuote;
                         output.push(current_byte.unwrap());
@@ -87,6 +118,14 @@ impl CommadnLine {
                     None => {
                         break;
                     }
+                },
+                State::DoubleQuoteBackslash => match current_byte {
+                    Some(byte) => {
+                        output.push(byte);
+                        current_state = State::DoubleQuote;
+                        current_byte = iterator.next();
+                    }
+                    None => break,
                 },
                 State::Space => match current_byte {
                     Some(b'"') => {
@@ -115,24 +154,12 @@ impl CommadnLine {
                     }
                 },
                 State::Backslash => match current_byte {
-                    Some(b' ') => {
-                        current_state = State::Space;
-                        output.push(current_byte.unwrap());
-                        current_byte = iterator.next()
-                    }
-                    Some(b'\\') => {
+                    Some(byte) => {
                         current_state = State::Alphanumeric;
-                        output.push(current_byte.unwrap());
-                        current_byte = iterator.next()
+                        output.push(byte);
+                        current_byte = iterator.next();
                     }
-                    Some(_) => {
-                        current_state = State::Alphanumeric;
-                        output.push(current_byte.unwrap());
-                        current_byte = iterator.next()
-                    }
-                    None => {
-                        break;
-                    }
+                    None => break,
                 },
                 State::Alphanumeric => match current_byte {
                     Some(b'\'') => {
@@ -161,9 +188,10 @@ impl CommadnLine {
                         break;
                     }
                 },
+                State::End => break,
             }
         }
-        //println!("{:?}", String::from_utf8(output.clone()).unwrap());
+
         output.to_vec()
     }
 }
@@ -225,12 +253,11 @@ mod tests {
     #[test]
     fn parse_text_with_backslash() {
         let value = [
-            //("three\\ \\ \\ spaces", "three   spaces"),
-            // ("before\\     after", "before after"),
-            // ("test\\nexample", "testnexample"),
-            // ("hello\\\\world", "hello\\world"),
-            // ("\\'hello\\'", "'hello'"),
-            ("shell'hello'\\'script", "shell'hello'\'script"),
+            ("three\\ \\ \\ spaces", "three   spaces"),
+            ("before\\     after", "before  after"),
+            ("test\\nexample", "testnexample"),
+            ("hello\\\\world", "hello\\world"),
+            ("\\'hello\\'", "'hello'"),
         ];
 
         for (input, expected) in value {
