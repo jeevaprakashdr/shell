@@ -137,7 +137,7 @@ impl CommadnLine {
                 State::Alphanumeric => match current_byte {
                     Some(b'\'') => {
                         current_state = State::SingleQuote;
-                        //current_byte = iterator.next()
+                        current_byte = iterator.next()
                     }
                     Some(b'"') => {
                         current_state = State::DoubleQuote;
