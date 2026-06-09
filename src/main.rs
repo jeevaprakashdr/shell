@@ -9,7 +9,7 @@ mod command_line;
 mod path;
 
 fn main() {
-    let mut cli = CommadnLine::new();
+    let mut cli = CommadnLine::new(std::io::stdin());
     loop {
         cli.write("$ ");
         let (cmd, args) = cli.read().parse();
@@ -18,7 +18,7 @@ fn main() {
                 return;
             }
             Command::Echo => {
-                let output = CommadnLine::parse_string(args);
+                let output = CommadnLine::<()>::parse_string(args);
                 cli.write_line(&String::from_utf8(output).unwrap());
             }
             Command::Type => {
