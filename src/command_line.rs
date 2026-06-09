@@ -80,9 +80,9 @@ impl CommadnLine {
                         current_state = State::Backslash;
                         current_byte = iterator.next()
                     }
-                    Some(_) => {
+                    Some(byte) => {
                         current_state = State::Alphanumeric;
-                        output.push(current_byte.unwrap());
+                        output.push(byte);
                         current_byte = iterator.next()
                     }
                     None => current_state = State::End,
@@ -97,9 +97,7 @@ impl CommadnLine {
                         output.push(current_byte.unwrap());
                         current_byte = iterator.next()
                     }
-                    None => {
-                        break;
-                    }
+                    None => current_state = State::End,
                 },
                 State::DoubleQuote => match current_byte {
                     Some(b'"') => {
@@ -110,14 +108,12 @@ impl CommadnLine {
                         current_state = State::DoubleQuoteBackslash;
                         current_byte = iterator.next();
                     }
-                    Some(_) => {
+                    Some(byte) => {
                         current_state = State::DoubleQuote;
-                        output.push(current_byte.unwrap());
+                        output.push(byte);
                         current_byte = iterator.next()
                     }
-                    None => {
-                        break;
-                    }
+                    None => current_state = State::End,
                 },
                 State::DoubleQuoteBackslash => match current_byte {
                     Some(byte) => {
@@ -125,7 +121,7 @@ impl CommadnLine {
                         current_state = State::DoubleQuote;
                         current_byte = iterator.next();
                     }
-                    None => break,
+                    None => current_state = State::End,
                 },
                 State::Space => match current_byte {
                     Some(b'"') => {
@@ -144,14 +140,12 @@ impl CommadnLine {
                         current_state = State::Backslash;
                         current_byte = iterator.next()
                     }
-                    Some(_) => {
+                    Some(byte) => {
                         current_state = State::Alphanumeric;
-                        output.push(current_byte.unwrap());
+                        output.push(byte);
                         current_byte = iterator.next()
                     }
-                    None => {
-                        break;
-                    }
+                    None => current_state = State::End,
                 },
                 State::Backslash => match current_byte {
                     Some(byte) => {
@@ -159,7 +153,7 @@ impl CommadnLine {
                         output.push(byte);
                         current_byte = iterator.next();
                     }
-                    None => break,
+                    None => current_state = State::End,
                 },
                 State::Alphanumeric => match current_byte {
                     Some(b'\'') => {
@@ -179,14 +173,12 @@ impl CommadnLine {
                         current_state = State::Backslash;
                         current_byte = iterator.next()
                     }
-                    Some(_) => {
+                    Some(byte) => {
                         current_state = State::Alphanumeric;
-                        output.push(current_byte.unwrap());
+                        output.push(byte);
                         current_byte = iterator.next()
                     }
-                    None => {
-                        break;
-                    }
+                    None => current_state = State::End,
                 },
                 State::End => break,
             }
