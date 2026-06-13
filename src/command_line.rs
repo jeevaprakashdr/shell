@@ -1,5 +1,7 @@
 use std::io::{BufReader, BufWriter, Read, Write, stdout};
 
+use crate::nom_parser;
+
 pub(crate) struct CommadnLine<R> {
     reader: BufReader<R>,
     writer: BufWriter<std::io::Stdout>,
@@ -213,6 +215,14 @@ where
         let mut x = self.inner.splitn(2, |&b| b == b' ');
         let (cmd, args) = (x.next().unwrap_or_default(), x.next().unwrap_or_default());
         (cmd.trim_ascii().to_vec(), args.trim_ascii().to_vec())
+    }
+
+    pub(crate) fn nom_parse(&self) -> (Vec<u8>, Vec<&[u8]>) {
+        if let Ok((_, (command, args))) = nom_parser::parse(&self.inner) {
+            (command.to_vec(), args)
+        } else {
+            (Vec::new(), Vec::new())
+        }
     }
 }
 
