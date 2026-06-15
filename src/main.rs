@@ -19,6 +19,7 @@ fn main() {
     loop {
         cli.write("$ ");
         let (cmd, args) = cli.read().nom_parse();
+        let args: Vec<Vec<u8>> = args.iter().map(|s| s.to_vec()).collect();
         match Command::from_bytes(cmd.clone()) {
             Command::Exit => {
                 return;
@@ -32,47 +33,35 @@ fn main() {
                 cli.write_line(&output);
             }
             Command::Type => {
-                let arg = args
-                    .iter()
-                    .map(|a| String::from_utf8(a.to_vec()).unwrap())
-                    .collect::<Vec<_>>()
-                    .first()
-                    .unwrap()
-                    .clone();
+                let cmd = args.first().unwrap();
                 let output = std::process::Command::new("sh")
                     .arg("-c")
-                    .arg(format!("type {}", arg))
+                    .arg(format!("type {}", String::from_utf8(cmd.to_vec()).unwrap()))
                     .output()
                     .unwrap();
                 cli.write(&String::from_utf8(output.stdout).unwrap());
-
-                // let binary_name = String::from_utf8(args.first().unwrap().to_vec()).unwrap();
-                // match which::which(binary_name.clone()) {
-                //     Ok(_) => cli.write_line(&format!("{} is a shell builtin", binary_name)),
-                //     Err(e) => cli.write_line(&e.to_string()),
-                // };
             }
             Command::Pwd => {
                 cli.write_line(&env::current_dir().unwrap().display().to_string());
             }
             Command::Cd => {
-                // if args == b"~" {
-                //     let home = env::home_dir()
-                //         .map(|protobuf| protobuf.display().to_string())
-                //         .unwrap_or("/".to_string());
-                //     env::set_current_dir(home).unwrap();
-                //     continue;
-                // }
+                if args.first().unwrap() == b"~" {
+                    let home = env::home_dir()
+                        .map(|protobuf| protobuf.display().to_string())
+                        .unwrap_or("/".to_string());
+                    env::set_current_dir(home).unwrap();
+                    continue;
+                }
 
-                // let path = Path::new(OsStr::from_bytes(args.as_slice()));
-                // if path.exists() {
-                //     env::set_current_dir(path).unwrap();
-                // } else {
-                //     cli.write_line(&format!(
-                //         "cd: {}: No such file or directory",
-                //         String::from_utf8(args).unwrap()
-                //     ));
-                // }
+                let path = Path::new(OsStr::from_bytes(args.first().unwrap()));
+                if path.exists() {
+                    env::set_current_dir(path).unwrap();
+                } else {
+                    cli.write_line(&format!(
+                        "cd: {}: No such file or directory",
+                        String::from_utf8(args.first().unwrap().to_vec()).unwrap()
+                    ));
+                }
             }
             Command::Exec(cmd) => {
                 let path = which::which(cmd.clone()).unwrap();
