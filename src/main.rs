@@ -29,7 +29,7 @@ fn main() {
                     .iter()
                     .map(|a| String::from_utf8(a.to_vec()).unwrap())
                     .collect::<Vec<_>>()
-                    .join(" ");
+                    .join("");
                 cli.write_line(&output);
             }
             Command::Type => {
@@ -67,6 +67,7 @@ fn main() {
                 let path = which::which(cmd.clone()).unwrap();
                 let args = args
                     .iter()
+                    .filter(|&p| p != b" ")
                     .map(|a| String::from_utf8(a.to_vec()).unwrap())
                     .collect::<Vec<_>>();
                 let output = std::process::Command::new(path.display().to_string())
@@ -74,14 +75,6 @@ fn main() {
                     .args(args)
                     .output()
                     .unwrap();
-                // let output = std::process::Command::new("sh")
-                //     .arg("-c")
-                //     .arg(format!(
-                //         "{cmd} {}",
-                //         String::from_utf8(args.clone()).unwrap()
-                //     ))
-                //     .output()
-                //     .unwrap();
                 cli.write(&String::from_utf8(output.stdout).unwrap());
             }
             Command::Unknown => {
