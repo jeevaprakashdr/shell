@@ -1,6 +1,6 @@
-
 use crate::path;
 
+#[derive(Debug)]
 pub(crate) enum Command {
     Exit,
     Echo,
@@ -13,6 +13,10 @@ pub(crate) enum Command {
 
 impl Command {
     pub(crate) fn from_bytes(cmd: Vec<u8>) -> Command {
+        if cmd.is_empty() {
+            return Command::Unknown
+        }
+
         match cmd.as_slice() {
             b"exit" => Command::Exit,
             b"echo" => Command::Echo,

@@ -217,7 +217,7 @@ where
         (cmd.trim_ascii().to_vec(), args.trim_ascii().to_vec())
     }
 
-    pub(crate) fn nom_parse(&self) -> (Vec<u8>, Vec<&[u8]>) {
+    pub(crate) fn nom_parse(&self) -> (Vec<u8>, Vec<Box<[u8]>>) {
         if let Ok((_, (command, args))) = nom_parser::parse(&self.inner) {
             (command.to_vec(), args)
         } else {

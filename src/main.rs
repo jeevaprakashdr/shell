@@ -20,6 +20,10 @@ fn main() {
         cli.write("$ ");
         let (cmd, args) = cli.read().nom_parse();
         let args: Vec<Vec<u8>> = args.iter().map(|s| s.to_vec()).collect();
+        // println!(
+        //     "arg {}",
+        //     String::from_utf8(args.clone().concat().to_vec()).unwrap()
+        // );
         match Command::from_bytes(cmd.clone()) {
             Command::Exit => {
                 return;
@@ -68,8 +72,9 @@ fn main() {
                 let args = args
                     .iter()
                     .filter(|&p| p != b" ")
-                    .map(|a| String::from_utf8(a.to_vec()).unwrap())
+                    .map(|p| String::from_utf8(p.to_vec()).unwrap())
                     .collect::<Vec<_>>();
+
                 let output = std::process::Command::new(path.display().to_string())
                     .arg0(cmd)
                     .args(args)
