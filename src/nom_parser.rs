@@ -20,13 +20,15 @@ fn alphanumeric_with_special_chars<'a>(
     }
 }
 
-fn command(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    let allowed_specials = "_".as_bytes();
-    alt((
-        take_while1(|b: u8| b.is_ascii_alphanumeric() || allowed_specials.contains(&b)),
-        eof,
+fn command(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (i, o) = alt((
+        single_quoted_with(" \"".as_bytes()),
+        double_quoted_with(" '".as_bytes()),
+        unquoted_with("_".as_bytes()),
     ))
-    .parse(input.trim_ascii())
+    .parse(input.trim_ascii())?;
+
+    Ok((i, o))
 }
 
 fn arguments(input: &[u8]) -> IResult<&[u8], Vec<Box<[u8]>>> {
@@ -57,26 +59,14 @@ fn path_component<'a>(
             alt((
                 map(tag(".."), |p| Box::from(p)),
                 unquoted_backslash(allowed_chars),
-                single_quoted_path_component(allowed_chars),
+                single_quoted_path_component(),
+                double_quoted_path_component(),
             )),
         ))
             .parse(input)?;
 
         Ok((i, [o.0, &o.1[..]].concat().into_boxed_slice()))
     }
-}
-
-fn double_quoted_path_component(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
-    let (i, o) = ((
-        tag("/"),
-        alt((
-            map(tag(".."), |p| Box::from(p)),
-            unquoted_with(" -_'".as_bytes()),
-        )),
-    ))
-        .parse(input)?;
-
-    Ok((i, [o.0, &o.1[..]].concat().into_boxed_slice()))
 }
 
 fn absolute_path<'a>(
@@ -149,6 +139,8 @@ fn quoted_path_component<'a>(
     move |input: &[u8]| {
         fold_many0(
             alt((
+                value(b"\"".to_vec(), tag("\\\"")),
+                value(b"\\".to_vec(), tag("\\\\")),
                 value(b"\\".to_vec(), tag("\\")),
                 map(
                     take_while1(|c: u8| c.is_ascii_alphanumeric() || allowed_chars.contains(&c)),
@@ -166,7 +158,7 @@ fn quoted_path_component<'a>(
     }
 }
 
-fn quoted_backslash<'a>(
+fn single_quoted_backslash<'a>(
     allowed_chars: &'a [u8],
 ) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
     move |input: &[u8]| {
@@ -180,6 +172,28 @@ fn quoted_backslash<'a>(
             alt((
                 value("\\\"".as_bytes(), tag("\"".as_bytes())),
                 value("\\\\".as_bytes(), tag("\\".as_bytes())),
+                value("\\n".as_bytes(), tag("n")),
+            )),
+        )
+        .map(|o| o.into_boxed_slice())
+        .parse(input)
+    }
+}
+
+fn double_quoted_backslash<'a>(
+    allowed_chars: &'a [u8],
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
+    move |input: &[u8]| {
+        if input.is_empty() {
+            return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
+        }
+
+        escaped_transform(
+            take_while1(|c: u8| c.is_ascii_alphanumeric() || allowed_chars.contains(&c)),
+            '\\',
+            alt((
+                value("\"".as_bytes(), tag("\"".as_bytes())),
+                value("\\".as_bytes(), tag("\\".as_bytes())),
                 value("\\n".as_bytes(), tag("n")),
             )),
         )
@@ -204,7 +218,7 @@ fn single_quoted_with<'a>(
     move |input: &[u8]| {
         let (i, (_, o, _)) = (
             tag("'".as_bytes()),
-            alt((quoted_backslash(allowed_chars), unquoted)),
+            alt((single_quoted_backslash(allowed_chars), unquoted)),
             tag("'".as_bytes()),
         )
             .parse(input)?;
@@ -212,14 +226,24 @@ fn single_quoted_with<'a>(
     }
 }
 
-fn single_quoted_path_component<'a>(
-    allowed_chars: &'a [u8],
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
+fn single_quoted_path_component<'a>() -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
     move |input: &[u8]| {
         let (i, (_, o, _)) = (
             tag("'".as_bytes()),
             alt((quoted_path_component(" ".as_bytes()), unquoted)),
             tag("'".as_bytes()),
+        )
+            .parse(input)?;
+        Ok((i, o.to_vec().into_boxed_slice()))
+    }
+}
+
+fn double_quoted_path_component<'a>() -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
+    move |input: &[u8]| {
+        let (i, (_, o, _)) = (
+            tag("\"".as_bytes()),
+            alt((quoted_path_component(" ".as_bytes()), unquoted)),
+            tag("\"".as_bytes()),
         )
             .parse(input)?;
         Ok((i, o.to_vec().into_boxed_slice()))
@@ -247,7 +271,7 @@ fn double_quoted_with<'a>(
     move |input: &[u8]| {
         let (i, (_, o, _)) = (
             tag("\"".as_bytes()),
-            alt((unquoted_with(allowed_chars), unquoted)),
+            alt((double_quoted_backslash(allowed_chars), unquoted)),
             tag("\"".as_bytes()),
         )
             .parse(input)?;
@@ -258,15 +282,15 @@ fn double_quoted_with<'a>(
 fn double_quoted_absolute_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     let (i, (_, o, _)) = (
         tag("\"".as_bytes()),
-        many1(double_quoted_path_component),
+        absolute_path(" '".as_bytes()),
         tag("\"".as_bytes()),
     )
         .parse(input)?;
 
-    Ok((i, o.concat().into_boxed_slice()))
+    Ok((i, o))
 }
 
-pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], (&[u8], Vec<Box<[u8]>>)> {
+pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], (Box<[u8]>, Vec<Box<[u8]>>)> {
     let (i, c) = command.parse(input.trim_ascii())?;
     if i.is_empty() {
         return Ok((i, (c, Vec::new())));
@@ -616,7 +640,7 @@ mod tests {
 
         for (input, expected) in fixture {
             let r = nom_parser::command(input.as_bytes()).unwrap();
-            assert_eq!(r.1, expected.as_bytes());
+            assert_eq!(r.1.as_ref(), expected.as_bytes());
         }
     }
 
@@ -635,7 +659,7 @@ mod tests {
         ];
         for (input, (expected_cmd, expected_args)) in fixture {
             let (_input, (cmd, args)) = nom_parser::parse(input.as_bytes()).unwrap();
-            assert_eq!(cmd, expected_cmd.as_bytes());
+            assert_eq!(cmd.as_ref(), expected_cmd.as_bytes());
             assert_eq!(
                 args.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
                 expected_args.as_slice()

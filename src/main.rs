@@ -20,10 +20,6 @@ fn main() {
         cli.write("$ ");
         let (cmd, args) = cli.read().nom_parse();
         let args: Vec<Vec<u8>> = args.iter().map(|s| s.to_vec()).collect();
-        // println!(
-        //     "arg {}",
-        //     String::from_utf8(args.clone().concat().to_vec()).unwrap()
-        // );
         match Command::from_bytes(cmd.clone()) {
             Command::Exit => {
                 return;
