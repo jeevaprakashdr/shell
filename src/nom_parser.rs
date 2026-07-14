@@ -1,14 +1,16 @@
-use std::io::Read;
-
 use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{escaped_transform, tag, take, take_while1},
     character::complete::{alpha1, multispace1},
-    combinator::{eof, map, value},
-    error::{Error, ErrorKind},
+    combinator::{map, not, peek, value},
+    error::{
+        ErrorKind::{self},
+    },
     multi::{fold_many0, many0, many1},
+    sequence::preceded,
 };
+use nom::error::Error;
 
 fn alphanumeric_with_special_chars<'a>(
     allowed_specials: &'a [u8],
@@ -31,12 +33,15 @@ fn command(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     Ok((i, o))
 }
 
-fn arguments(input: &[u8]) -> IResult<&[u8], Vec<Box<[u8]>>> {
-    many0(alt((
+fn arguments(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (input, _) = not(peek(redirection)).parse(input)?;
+
+    alt((
         map(multispace1, |_| Box::from(" ".as_bytes())),
+        list_directory_or_file,
         unquoted_with("_".as_bytes()),
         unquoted,
-        absolute_path("-_".as_bytes()),
+        absolute_path("-_.".as_bytes()),
         relative_path,
         unquoted_backslash(" _".as_bytes()),
         home,
@@ -46,23 +51,33 @@ fn arguments(input: &[u8]) -> IResult<&[u8], Vec<Box<[u8]>>> {
         empty_double_quoted,
         double_quoted_with(" '".as_bytes()),
         double_quoted_absolute_path,
-    )))
+    ))
     .parse(input)
+}
+
+fn redirection_argument(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (i, o) = preceded(
+        alt((tag(">"), tag("1>"))),
+        alphanumeric_with_special_chars(" /_.".as_bytes()),
+    )
+    .parse(input)?;
+
+    Ok((i, Box::from(o.trim_ascii())))
 }
 
 fn path_component<'a>(
     allowed_chars: &'a [u8],
-) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Box<[u8]>> {
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
     move |input: &[u8]| {
-        let (i, o) = ((
+        let (i, o) = (
             tag("/"),
             alt((
-                map(tag(".."), |p| Box::from(p)),
+                map(tag(".."), Box::from),
                 unquoted_backslash(allowed_chars),
                 single_quoted_path_component(),
                 double_quoted_path_component(),
             )),
-        ))
+        )
             .parse(input)?;
 
         Ok((i, [o.0, &o.1[..]].concat().into_boxed_slice()))
@@ -79,12 +94,24 @@ fn absolute_path<'a>(
 }
 
 fn relative_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
-    let (i, o) = ((
+    let (i, o) = (
         alt((tag(".."), tag("."))),
         many1(path_component(" _".as_bytes())),
-    ))
+    )
         .parse(input)?;
     Ok((i, [o.0, &o.1.concat()[..]].concat().into_boxed_slice()))
+}
+
+fn list_directory_or_file(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (i, o) = tag("-1").parse(input)?;
+
+    Ok((i, o.to_vec().into_boxed_slice()))
+}
+
+fn redirection(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (_, _) = alt((tag("1>"), tag(">"))).parse(input)?;
+
+    Ok(("".as_bytes(), Box::from(input)))
 }
 
 fn home(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
@@ -99,7 +126,7 @@ fn unquoted(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
 
 fn unquoted_backslash<'a>(
     allowed_chars: &'a [u8],
-) -> impl FnMut(&'a [u8]) -> IResult<&[u8], Box<[u8]>> {
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
     move |input: &[u8]| {
         if input.is_empty() {
             return Err(nom::Err::Error(Error::new(input, ErrorKind::Eof)));
@@ -206,12 +233,6 @@ fn empty_single_quoted(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     map(tag("''"), |_| Box::from("".as_bytes())).parse(input)
 }
 
-fn single_quoted(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
-    let (i, (_, o, _)) = (tag("'".as_bytes()), unquoted, tag("'".as_bytes())).parse(input)?;
-
-    Ok((i, o.to_vec().into_boxed_slice()))
-}
-
 fn single_quoted_with<'a>(
     allowed_chars: &'a [u8],
 ) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Box<[u8]>> {
@@ -290,20 +311,59 @@ fn double_quoted_absolute_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     Ok((i, o))
 }
 
-pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], (Box<[u8]>, Vec<Box<[u8]>>)> {
+pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], (Box<[u8]>, Vec<Box<[u8]>>, Box<[u8]>)> {
     let (i, c) = command.parse(input.trim_ascii())?;
     if i.is_empty() {
-        return Ok((i, (c, Vec::new())));
+        return Ok((i, (c, Vec::new(), Vec::new().into())));
     }
-    let (i, args) = arguments.parse(i.trim_ascii())?;
-    Ok((i, (c, args)))
+
+    let (i, args) = many0(arguments).parse(i.trim_ascii())?;
+    if i.is_empty() || i == "/".as_bytes() {
+        return Ok((i, (c, args, Vec::new().into())));
+    }
+
+    let (i, redirection_path) = redirection_argument.parse(i.trim_ascii())?;
+    Ok((i, (c, args, redirection_path)))
 }
 
 #[cfg(test)]
 mod tests {
-    use nom::Parser;
+    use nom::{
+        Parser,
+        error::{Error, ErrorKind},
+    };
 
     use crate::nom_parser;
+
+    #[test]
+    fn list_directory_or_file() {
+        let fixture = vec![("-1 abc".as_bytes(), "-1")];
+        for (input, expected) in fixture {
+            let result = nom_parser::list_directory_or_file(input);
+
+            assert!(result.is_ok());
+            let actual = result.unwrap();
+            assert_eq!(actual.1.as_ref(), expected.as_bytes());
+            assert_eq!(actual.0.as_ref(), " abc".as_bytes());
+        }
+    }
+
+    #[test]
+    fn redirection() {
+        let fixture = vec![
+            ("1> abc".as_bytes(), "> abc".as_bytes()),
+            ("> xyz".as_bytes(), "> xyz".as_bytes()),
+        ];
+
+        for (input, expected) in fixture {
+            let result = nom_parser::redirection(input);
+
+            assert!(result.is_ok());
+            let actual = result.unwrap();
+            assert_eq!(actual.0.as_ref(), expected);
+            assert!(actual.1.is_empty());
+        }
+    }
 
     #[test]
     fn unquoted() {
@@ -341,10 +401,7 @@ mod tests {
                 "actual {}",
                 String::from_utf8(actual.clone().1.to_vec()).unwrap()
             );
-            println!(
-                "expected {}",
-                String::from_utf8(expected.clone().to_vec()).unwrap()
-            );
+            println!("expected {}", String::from_utf8(expected.to_vec()).unwrap());
             assert_eq!(actual.1.as_ref(), expected);
         }
     }
@@ -369,18 +426,6 @@ mod tests {
         let fixture = vec![("''".as_bytes(), "".as_bytes())];
         for (input, expected) in fixture {
             let result = nom_parser::empty_single_quoted(input);
-
-            assert!(result.is_ok());
-            let actual = result.unwrap();
-            assert_eq!(actual.1.as_ref(), expected);
-        }
-    }
-
-    #[test]
-    fn single_quoted() {
-        let fixture = vec![("'test'".as_bytes(), "test".as_bytes())];
-        for (input, expected) in fixture {
-            let result = nom_parser::single_quoted(input);
 
             assert!(result.is_ok());
             let actual = result.unwrap();
@@ -497,6 +542,7 @@ mod tests {
             ("/tmp/ant/\\_ignored_6", "/tmp/ant/_ignored_6"),
             ("/tmp/ant/just_one_\\\\_51", "/tmp/ant/just_one_\\_51"),
             ("/tmp/ant/ignore_\\34", "/tmp/ant/ignore_34"),
+            ("/tmp/apple/ping.md", "/tmp/apple/ping.md"),
         ];
 
         for (input, expected) in fixture {
@@ -507,7 +553,7 @@ mod tests {
                 "actual {}",
                 String::from_utf8(actual.clone().1.to_vec()).unwrap()
             );
-            println!("expected {}", expected.clone());
+            println!("expected {}", expected);
             assert_eq!(actual.1.as_ref(), expected.as_bytes());
         }
     }
@@ -516,6 +562,7 @@ mod tests {
     fn relative_path() {
         let fixture = vec![
             ("./blueberry/apple", "./blueberry/apple"),
+            ("./blueberry/apple/pink.md", "./blueberry/apple/pink.md"),
             ("../../../", "../../.."),
         ];
 
@@ -545,19 +592,18 @@ mod tests {
             ("/_ignored_\\\\_2".as_bytes(), "/_ignored_\\_2".as_bytes()),
             ("/'no slash 49'".as_bytes(), "/no slash 49".as_bytes()),
             ("/'one slash \\3'".as_bytes(), "/one slash \\3".as_bytes()),
+            ("/'one slash \\3'".as_bytes(), "/one slash \\3".as_bytes()),
+            ("/ignored.md".as_bytes(), "/ignored.md".as_bytes()),
         ];
         for (input, expected) in fixture {
-            let result = nom_parser::path_component(" _".as_bytes()).parse(input);
+            let result = nom_parser::path_component(" _.".as_bytes()).parse(input);
 
             let actual = result.unwrap();
             println!(
                 "actual {}",
                 String::from_utf8(actual.clone().1.to_vec()).unwrap()
             );
-            println!(
-                "expected {}",
-                String::from_utf8(expected.clone().to_vec()).unwrap()
-            );
+            println!("expected {}", String::from_utf8(expected.to_vec()).unwrap());
             assert_eq!(actual.1.as_ref(), expected);
         }
     }
@@ -613,14 +659,19 @@ mod tests {
                     "/tmp/dog/just_one_\\_93".as_bytes(),
                 ],
             ),
+            (
+                "/tmp/some-path/file.md",
+                vec!["/tmp/some-path/file.md".as_bytes()],
+            ),
         ];
 
         for (input, expected) in fixture {
             let r = nom_parser::arguments(input.as_bytes());
             let actual = r.unwrap();
             assert_eq!(
-                actual.1.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
-                expected
+                // actual.1.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
+                &actual.1.as_ref(),
+                expected.first().unwrap()
             );
         }
     }
@@ -645,25 +696,62 @@ mod tests {
     }
 
     #[test]
+    fn redirection_argument() {
+        let fixture = vec![
+            ("> /redirection_path", "/redirection_path"),
+            ("1> /redirection_path", "/redirection_path"),
+        ];
+
+        for (input, expected) in fixture {
+            let r = nom_parser::redirection_argument(input.as_bytes()).unwrap();
+            assert_eq!(r.1.as_ref(), expected.as_bytes());
+        }
+    }
+
+    #[test]
     fn parse() {
-        let fixture: Vec<(&_, (&_, Vec<_>))> = vec![
-            ("cmd", ("cmd", vec![])),
-            (" cmd", ("cmd", vec![])),
-            (" cmd ", ("cmd", vec![])),
-            ("cmd a", ("cmd", vec!["a".as_bytes()])),
-            ("cmd a_1", ("cmd", vec!["a_1".as_bytes()])),
+        let fixture: Vec<(&_, (&_, Vec<_>, Option<&[u8]>))> = vec![
+            ("cmd", ("cmd", vec![], None)),
+            (" cmd", ("cmd", vec![], None)),
+            (" cmd ", ("cmd", vec![], None)),
+            ("cmd a", ("cmd", vec!["a".as_bytes()], None)),
+            ("cmd a_1", ("cmd", vec!["a_1".as_bytes()], None)),
             (
                 "cmd a b",
-                ("cmd", vec!["a".as_bytes(), " ".as_bytes(), "b".as_bytes()]),
+                (
+                    "cmd",
+                    vec!["a".as_bytes(), " ".as_bytes(), "b".as_bytes()],
+                    None,
+                ),
+            ),
+            (
+                "cmd -1 abc",
+                (
+                    "cmd",
+                    vec!["-1".as_bytes(), " ".as_bytes(), "abc".as_bytes()],
+                    None,
+                ),
+            ),
+            (
+                "echo H 1> abc",
+                (
+                    "echo",
+                    vec!["H".as_bytes(), " ".as_bytes()],
+                    Some("abc".as_bytes()),
+                ),
             ),
         ];
-        for (input, (expected_cmd, expected_args)) in fixture {
-            let (_input, (cmd, args)) = nom_parser::parse(input.as_bytes()).unwrap();
+        for (input, (expected_cmd, expected_args, expected_redirection_path)) in fixture {
+            let (_input, (cmd, args, redirection_path)) =
+                nom_parser::parse(input.as_bytes()).unwrap();
             assert_eq!(cmd.as_ref(), expected_cmd.as_bytes());
             assert_eq!(
                 args.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
                 expected_args.as_slice()
             );
+            if expected_redirection_path.is_some() {
+                assert_eq!(redirection_path, expected_redirection_path.unwrap().into());
+            }
         }
     }
 }

@@ -31,9 +31,9 @@ pub(crate) fn is_executable(command: &[u8]) -> Option<String> {
 
         if path.exists() {
             let path_value = if singe_quoted {
-                format!("'{}'", path.to_str().unwrap().to_string())
+                format!("'{}'", path.to_str().unwrap())
             } else if double_quoted {
-                format!("\"{}\"", path.to_str().unwrap().to_string())
+                format!("\"{}\"", path.to_str().unwrap())
             } else {
                 cmd
             };
