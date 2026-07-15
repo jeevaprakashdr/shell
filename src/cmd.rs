@@ -1,7 +1,28 @@
 use crate::path;
 
 #[derive(Debug)]
-pub(crate) enum Command {
+pub(crate) struct Command {
+    pub name: Vec<u8>,
+    pub args: Vec<Box<[u8]>>,
+    pub redirection_path: Option<Box<[u8]>>,
+}
+
+impl Command {
+    pub(crate) fn new(
+        name: Vec<u8>,
+        args: Vec<Box<[u8]>>,
+        redirection_path: Option<Box<[u8]>>,
+    ) -> Self {
+        Self {
+            name,
+            args,
+            redirection_path,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum CommandType {
     Exit,
     Echo,
     Type,
@@ -11,20 +32,20 @@ pub(crate) enum Command {
     Unknown,
 }
 
-impl Command {
-    pub(crate) fn from_bytes(cmd: Vec<u8>) -> Command {
+impl CommandType {
+    pub(crate) fn from_bytes(cmd: Vec<u8>) -> CommandType {
         if cmd.is_empty() {
-            return Command::Unknown
+            return CommandType::Unknown;
         }
 
         match cmd.as_slice() {
-            b"exit" => Command::Exit,
-            b"echo" => Command::Echo,
-            b"type" => Command::Type,
-            b"pwd" => Command::Pwd,
-            b"cd" => Command::Cd,
-            command if let Some(cmd) = path::is_executable(command) => Command::Exec(cmd),
-            _ => Command::Unknown,
+            b"exit" => CommandType::Exit,
+            b"echo" => CommandType::Echo,
+            b"type" => CommandType::Type,
+            b"pwd" => CommandType::Pwd,
+            b"cd" => CommandType::Cd,
+            command if let Some(cmd) = path::is_executable(command) => CommandType::Exec(cmd),
+            _ => CommandType::Unknown,
         }
     }
 }

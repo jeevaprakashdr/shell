@@ -1,16 +1,16 @@
+use nom::error::Error;
 use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{escaped_transform, tag, take, take_while1},
     character::complete::{alpha1, multispace1},
     combinator::{map, not, peek, value},
-    error::{
-        ErrorKind::{self},
-    },
+    error::ErrorKind::{self},
     multi::{fold_many0, many0, many1},
     sequence::preceded,
 };
-use nom::error::Error;
+
+use crate::cmd::Command;
 
 fn alphanumeric_with_special_chars<'a>(
     allowed_specials: &'a [u8],
@@ -311,27 +311,24 @@ fn double_quoted_absolute_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     Ok((i, o))
 }
 
-pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], (Box<[u8]>, Vec<Box<[u8]>>, Box<[u8]>)> {
+pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], Command> {
     let (i, c) = command.parse(input.trim_ascii())?;
     if i.is_empty() {
-        return Ok((i, (c, Vec::new(), Vec::new().into())));
+        return Ok((i, Command::new(c.to_vec(), Vec::new(), None)));
     }
 
     let (i, args) = many0(arguments).parse(i.trim_ascii())?;
     if i.is_empty() || i == "/".as_bytes() {
-        return Ok((i, (c, args, Vec::new().into())));
+        return Ok((i, Command::new(c.to_vec(), args, None)));
     }
 
     let (i, redirection_path) = redirection_argument.parse(i.trim_ascii())?;
-    Ok((i, (c, args, redirection_path)))
+    Ok((i, Command::new(c.to_vec(), args, Some(redirection_path))))
 }
 
 #[cfg(test)]
 mod tests {
-    use nom::{
-        Parser,
-        error::{Error, ErrorKind},
-    };
+    use nom::Parser;
 
     use crate::nom_parser;
 
@@ -668,11 +665,7 @@ mod tests {
         for (input, expected) in fixture {
             let r = nom_parser::arguments(input.as_bytes());
             let actual = r.unwrap();
-            assert_eq!(
-                // actual.1.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
-                &actual.1.as_ref(),
-                expected.first().unwrap()
-            );
+            assert_eq!(&actual.1.as_ref(), expected.first().unwrap());
         }
     }
 
@@ -742,15 +735,18 @@ mod tests {
             ),
         ];
         for (input, (expected_cmd, expected_args, expected_redirection_path)) in fixture {
-            let (_input, (cmd, args, redirection_path)) =
-                nom_parser::parse(input.as_bytes()).unwrap();
-            assert_eq!(cmd.as_ref(), expected_cmd.as_bytes());
+            let (_input, command) = nom_parser::parse(input.as_bytes()).unwrap();
+            assert_eq!(command.name, expected_cmd.as_bytes());
             assert_eq!(
-                args.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
+                command.args.iter().map(|f| f.to_vec()).collect::<Vec<_>>(),
                 expected_args.as_slice()
             );
             if expected_redirection_path.is_some() {
-                assert_eq!(redirection_path, expected_redirection_path.unwrap().into());
+                assert!(command.redirection_path.is_some());
+                assert_eq!(
+                    command.redirection_path.unwrap(),
+                    expected_redirection_path.unwrap().into()
+                );
             }
         }
     }

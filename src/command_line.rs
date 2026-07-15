@@ -1,6 +1,6 @@
 use std::io::{BufReader, BufWriter, Read, Write, stdout};
 
-use crate::nom_parser;
+use crate::{cmd::Command, nom_parser};
 
 pub(crate) struct CommadnLine<R> {
     reader: BufReader<R>,
@@ -40,11 +40,10 @@ where
         self
     }
 
-    pub(crate) fn nom_parse(&self) -> (Vec<u8>, Vec<Box<[u8]>>, Box<[u8]>) {
-        if let Ok((_, (command, args, redirection_path))) = nom_parser::parse(&self.inner) {
-            (command.to_vec(), args, redirection_path)
-        } else {
-            (Vec::new(), Vec::new(), Vec::new().into())
+    pub(crate) fn nom_parse(&self) -> Result<Command, &str> {
+        match nom_parser::parse(&self.inner) {
+            Ok((_, cmd)) => Ok(cmd),
+            Err(_) => Err("Failed to process command"),
         }
     }
 }
