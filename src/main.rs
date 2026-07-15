@@ -29,13 +29,13 @@ fn main() {
             }
         };
 
-        let args: Vec<Vec<u8>> = cmd.args.iter().map(|s| s.to_vec()).collect();
         match CommandType::from_bytes(cmd.name.clone()) {
             CommandType::Exit => {
                 return;
             }
             CommandType::Echo => {
-                let output = args
+                let output = cmd
+                    .args
                     .iter()
                     .map(|a| String::from_utf8(a.to_vec()).unwrap())
                     .collect::<Vec<_>>()
@@ -53,7 +53,7 @@ fn main() {
                 }
             }
             CommandType::Type => {
-                let cmd = args.first().unwrap();
+                let cmd = cmd.args.first().unwrap();
                 let output = std::process::Command::new("sh")
                     .arg("-c")
                     .arg(format!("type {}", String::from_utf8(cmd.to_vec()).unwrap()))
@@ -65,7 +65,8 @@ fn main() {
                 cli.write_line(&env::current_dir().unwrap().display().to_string());
             }
             CommandType::Cd => {
-                if args.first().unwrap() == b"~" {
+                let first_arg = cmd.args.first().unwrap().as_ref();
+                if first_arg == b"~" {
                     let home = env::home_dir()
                         .map(|protobuf| protobuf.display().to_string())
                         .unwrap_or("/".to_string());
@@ -73,21 +74,22 @@ fn main() {
                     continue;
                 }
 
-                let path = Path::new(OsStr::from_bytes(args.first().unwrap()));
+                let path = Path::new(OsStr::from_bytes(first_arg));
                 if path.exists() {
                     env::set_current_dir(path).unwrap();
                 } else {
                     cli.write_line(&format!(
                         "cd: {}: No such file or directory",
-                        String::from_utf8(args.first().unwrap().to_vec()).unwrap()
+                        String::from_utf8(first_arg.to_vec()).unwrap()
                     ));
                 }
             }
             CommandType::Exec(cmd_name) => {
                 let path = which::which(cmd_name.clone()).unwrap();
-                let args = args
+                let args = cmd
+                    .args
                     .iter()
-                    .filter(|&p| p != b" ")
+                    .filter(|&p| p.as_ref() != b" ")
                     .map(|p| String::from_utf8(p.to_vec()).unwrap())
                     .collect::<Vec<_>>();
 
