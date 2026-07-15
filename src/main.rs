@@ -29,7 +29,6 @@ fn main() {
             }
         };
 
-        // let (cmd, args, redirection_path) = cli.read().nom_parse();
         let args: Vec<Vec<u8>> = cmd.args.iter().map(|s| s.to_vec()).collect();
         match CommandType::from_bytes(cmd.name.clone()) {
             CommandType::Exit => {
