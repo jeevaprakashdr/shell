@@ -51,6 +51,10 @@ fn main() {
                 } else {
                     cli.write_line(&output);
                 }
+
+                if let Some(path) = cmd.error_redirection_path {
+                    let _ = create_file_with_directories(String::from_utf8(path.to_vec()).unwrap());
+                }
             }
             CommandType::Type => {
                 let cmd = cmd.args.first().unwrap();
@@ -108,7 +112,16 @@ fn main() {
                     cli.write(&String::from_utf8(output.stdout).unwrap());
                 }
 
-                cli.write(&String::from_utf8(output.stderr).unwrap());
+                if let Some(path) = cmd.error_redirection_path {
+                    let file =
+                        create_file_with_directories(String::from_utf8(path.to_vec()).unwrap())
+                            .unwrap();
+                    let mut writer = BufWriter::new(file);
+                    writer.write_all(&output.stderr).unwrap();
+                    writer.flush().unwrap();
+                } else {
+                    cli.write(&String::from_utf8(output.stderr).unwrap());
+                }
             }
             CommandType::Unknown => {
                 cli.write_line(&format!(
@@ -118,4 +131,13 @@ fn main() {
             }
         }
     }
+}
+
+fn create_file_with_directories<P: AsRef<Path>>(path: P) -> io::Result<File> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    File::options().create(true).append(true).open(path)
 }

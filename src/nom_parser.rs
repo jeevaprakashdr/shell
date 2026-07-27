@@ -35,6 +35,7 @@ fn command(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
 
 fn arguments(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     let (input, _) = not(peek(redirection)).parse(input)?;
+    let (input, _) = not(peek(error_redirection)).parse(input)?;
 
     alt((
         map(multispace1, |_| Box::from(" ".as_bytes())),
@@ -55,14 +56,26 @@ fn arguments(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     .parse(input)
 }
 
-fn redirection_argument(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+fn error_redirection_argument(input: &[u8]) -> IResult<&[u8], Option<Box<[u8]>>> {
+    match preceded(
+        tag("2>"),
+        alphanumeric_with_special_chars(" /_.".as_bytes()),
+    )
+    .parse(input)
+    {
+        Ok((i, o)) => Ok((i, Some(Box::from(o.trim_ascii())))),
+        Err(_) => Ok((input, None)),
+    }
+}
+
+fn redirection_argument(input: &[u8]) -> IResult<&[u8], Option<Box<[u8]>>> {
     let (i, o) = preceded(
         alt((tag(">"), tag("1>"))),
         alphanumeric_with_special_chars(" /_.".as_bytes()),
     )
     .parse(input)?;
 
-    Ok((i, Box::from(o.trim_ascii())))
+    Ok((i, Some(Box::from(o.trim_ascii()))))
 }
 
 fn path_component<'a>(
@@ -110,6 +123,12 @@ fn list_directory_or_file(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
 
 fn redirection(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     let (_, _) = alt((tag("1>"), tag(">"))).parse(input)?;
+
+    Ok(("".as_bytes(), Box::from(input)))
+}
+
+fn error_redirection(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
+    let (_, _) = tag("2>").parse(input)?;
 
     Ok(("".as_bytes(), Box::from(input)))
 }
@@ -314,16 +333,27 @@ fn double_quoted_absolute_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
 pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], Command> {
     let (i, c) = command.parse(input.trim_ascii())?;
     if i.is_empty() {
-        return Ok((i, Command::new(c.to_vec(), Vec::new(), None)));
+        return Ok((i, Command::new(c.to_vec(), Vec::new(), None, None)));
     }
 
     let (i, args) = many0(arguments).parse(i.trim_ascii())?;
     if i.is_empty() || i == "/".as_bytes() {
-        return Ok((i, Command::new(c.to_vec(), args, None)));
+        return Ok((i, Command::new(c.to_vec(), args, None, None)));
+    }
+
+    let (i, error_redirection_path) = error_redirection_argument.parse(i.trim_ascii())?;
+    if error_redirection_path.is_some() {
+        return Ok((
+            i,
+            Command::new(c.to_vec(), args, None, error_redirection_path),
+        ));
     }
 
     let (i, redirection_path) = redirection_argument.parse(i.trim_ascii())?;
-    Ok((i, Command::new(c.to_vec(), args, Some(redirection_path))))
+    Ok((
+        i,
+        Command::new(c.to_vec(), args, redirection_path, error_redirection_path),
+    ))
 }
 
 #[cfg(test)]
@@ -351,6 +381,19 @@ mod tests {
 
         for input in fixture {
             let result = nom_parser::redirection(input);
+
+            assert!(result.is_ok());
+            let actual = result.unwrap();
+            assert_eq!(actual.1.as_ref(), input);
+        }
+    }
+
+    #[test]
+    fn error_redirection() {
+        let fixture = vec![("2> abc".as_bytes())];
+
+        for input in fixture {
+            let result = nom_parser::error_redirection(input);
 
             assert!(result.is_ok());
             let actual = result.unwrap();
@@ -690,24 +733,30 @@ mod tests {
         ];
 
         for (input, expected) in fixture {
-            let r = nom_parser::redirection_argument(input.as_bytes()).unwrap();
-            assert_eq!(r.1.as_ref(), expected.as_bytes());
+            let r = nom_parser::redirection_argument.parse(input.as_bytes());
+
+            assert!(r.is_ok());
+
+            let r = r.unwrap();
+            assert!(r.1.is_some());
+            assert_eq!(r.1.unwrap().as_ref(), expected.as_bytes());
         }
     }
 
     #[test]
     fn parse() {
-        let fixture: Vec<(&_, (&_, Vec<_>, Option<&[u8]>))> = vec![
-            ("cmd", ("cmd", vec![], None)),
-            (" cmd", ("cmd", vec![], None)),
-            (" cmd ", ("cmd", vec![], None)),
-            ("cmd a", ("cmd", vec!["a".as_bytes()], None)),
-            ("cmd a_1", ("cmd", vec!["a_1".as_bytes()], None)),
+        let fixture: Vec<(&_, (&_, Vec<_>, Option<&[u8]>, Option<&[u8]>))> = vec![
+            ("cmd", ("cmd", vec![], None, None)),
+            (" cmd", ("cmd", vec![], None, None)),
+            (" cmd ", ("cmd", vec![], None, None)),
+            ("cmd a", ("cmd", vec!["a".as_bytes()], None, None)),
+            ("cmd a_1", ("cmd", vec!["a_1".as_bytes()], None, None)),
             (
                 "cmd a b",
                 (
                     "cmd",
                     vec!["a".as_bytes(), " ".as_bytes(), "b".as_bytes()],
+                    None,
                     None,
                 ),
             ),
@@ -717,6 +766,16 @@ mod tests {
                     "cmd",
                     vec!["-1".as_bytes(), " ".as_bytes(), "abc".as_bytes()],
                     None,
+                    None,
+                ),
+            ),
+            (
+                "echo H > abc",
+                (
+                    "echo",
+                    vec!["H".as_bytes(), " ".as_bytes()],
+                    Some("abc".as_bytes()),
+                    None,
                 ),
             ),
             (
@@ -725,10 +784,29 @@ mod tests {
                     "echo",
                     vec!["H".as_bytes(), " ".as_bytes()],
                     Some("abc".as_bytes()),
+                    None,
+                ),
+            ),
+            (
+                "echo H 2> abc",
+                (
+                    "echo",
+                    vec!["H".as_bytes(), " ".as_bytes()],
+                    None,
+                    Some("abc".as_bytes()),
                 ),
             ),
         ];
-        for (input, (expected_cmd, expected_args, expected_redirection_path)) in fixture {
+        for (
+            input,
+            (
+                expected_cmd,
+                expected_args,
+                expected_redirection_path,
+                expected_error_redirection_path,
+            ),
+        ) in fixture
+        {
             let (_input, command) = nom_parser::parse(input.as_bytes()).unwrap();
             assert_eq!(command.name, expected_cmd.as_bytes());
             assert_eq!(
@@ -740,6 +818,13 @@ mod tests {
                 assert_eq!(
                     command.redirection_path.unwrap(),
                     expected_redirection_path.unwrap().into()
+                );
+            }
+            if expected_error_redirection_path.is_some() {
+                assert!(command.error_redirection_path.is_some());
+                assert_eq!(
+                    command.error_redirection_path.unwrap(),
+                    expected_error_redirection_path.unwrap().into()
                 );
             }
         }
