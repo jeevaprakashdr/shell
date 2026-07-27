@@ -14,6 +14,7 @@ use crate::{cmd::CommandType, command_line::CommadnLine};
 
 mod cmd;
 mod command_line;
+mod file_utility;
 mod nom_parser;
 mod path;
 
@@ -53,7 +54,9 @@ fn main() {
                 }
 
                 if let Some(path) = cmd.error_redirection_path {
-                    let _ = create_file_with_directories(String::from_utf8(path.to_vec()).unwrap());
+                    let _ = file_utility::create_file_with_directories(
+                        String::from_utf8(path.to_vec()).unwrap(),
+                    );
                 }
             }
             CommandType::Type => {
@@ -113,9 +116,10 @@ fn main() {
                 }
 
                 if let Some(path) = cmd.error_redirection_path {
-                    let file =
-                        create_file_with_directories(String::from_utf8(path.to_vec()).unwrap())
-                            .unwrap();
+                    let file = file_utility::create_file_with_directories(
+                        String::from_utf8(path.to_vec()).unwrap(),
+                    )
+                    .unwrap();
                     let mut writer = BufWriter::new(file);
                     writer.write_all(&output.stderr).unwrap();
                     writer.flush().unwrap();
@@ -131,13 +135,4 @@ fn main() {
             }
         }
     }
-}
-
-fn create_file_with_directories<P: AsRef<Path>>(path: P) -> io::Result<File> {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    File::options().create(true).append(true).open(path)
 }
