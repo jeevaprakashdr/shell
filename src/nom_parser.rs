@@ -56,15 +56,31 @@ fn arguments(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     .parse(input)
 }
 
-fn error_redirection_argument(input: &[u8]) -> IResult<&[u8], Option<Box<[u8]>>> {
-    match preceded(
-        tag("2>"),
+fn error_redirection_argument(input: &[u8]) -> IResult<&[u8], Redirection> {
+    let append_content = match preceded(
+        tag("2>>"),
         alphanumeric_with_special_chars(" /_.".as_bytes()),
     )
     .parse(input)
     {
-        Ok((i, o)) => Ok((i, Some(Box::from(o.trim_ascii())))),
-        Err(_) => Ok((input, None)),
+        Ok(_) => true,
+        Err(_) => false,
+    };
+
+    match preceded(
+        alt((tag("2>>"), tag("2>"))),
+        alphanumeric_with_special_chars(" /_.".as_bytes()),
+    )
+    .parse(input)
+    {
+        Ok((i, o)) => Ok((
+            i,
+            Redirection {
+                path: Some(Box::from(o.trim_ascii())),
+                append_content,
+            },
+        )),
+        Err(_) => Ok((input, Redirection::default())),
     }
 }
 
@@ -350,7 +366,12 @@ pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], Command> {
     if i.is_empty() {
         return Ok((
             i,
-            Command::new(c.to_vec(), Vec::new(), Redirection::default(), None),
+            Command::new(
+                c.to_vec(),
+                Vec::new(),
+                Redirection::default(),
+                Redirection::default(),
+            ),
         ));
     }
 
@@ -358,27 +379,27 @@ pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], Command> {
     if i.is_empty() || i == "/".as_bytes() {
         return Ok((
             i,
-            Command::new(c.to_vec(), args, Redirection::default(), None),
-        ));
-    }
-
-    let (i, error_redirection_path) = error_redirection_argument.parse(i.trim_ascii())?;
-    if error_redirection_path.is_some() {
-        return Ok((
-            i,
             Command::new(
                 c.to_vec(),
                 args,
                 Redirection::default(),
-                error_redirection_path,
+                Redirection::default(),
             ),
+        ));
+    }
+
+    let (i, error_redirection) = error_redirection_argument.parse(i.trim_ascii())?;
+    if error_redirection.path.is_some() {
+        return Ok((
+            i,
+            Command::new(c.to_vec(), args, Redirection::default(), error_redirection),
         ));
     }
 
     let (i, output_redirection) = redirection_argument.parse(i.trim_ascii())?;
     Ok((
         i,
-        Command::new(c.to_vec(), args, output_redirection, error_redirection_path),
+        Command::new(c.to_vec(), args, output_redirection, error_redirection),
     ))
 }
 
@@ -847,9 +868,9 @@ mod tests {
                 );
             }
             if expected_error_redirection_path.is_some() {
-                assert!(command.error_redirection_path.is_some());
+                assert!(command.error_redirection.path.is_some());
                 assert_eq!(
-                    command.error_redirection_path.unwrap(),
+                    command.error_redirection.path.unwrap(),
                     expected_error_redirection_path.unwrap().into()
                 );
             }

@@ -20,7 +20,7 @@ pub(crate) struct Command {
     pub name: Vec<u8>,
     pub args: Vec<Box<[u8]>>,
     pub output_redirection: Redirection,
-    pub error_redirection_path: Option<Box<[u8]>>,
+    pub error_redirection: Redirection,
 }
 
 impl Command {
@@ -28,13 +28,13 @@ impl Command {
         name: Vec<u8>,
         args: Vec<Box<[u8]>>,
         output_redirection: Redirection,
-        error_redirection_path: Option<Box<[u8]>>,
+        error_redirection: Redirection,
     ) -> Self {
         Self {
             name,
             args,
             output_redirection,
-            error_redirection_path,
+            error_redirection,
         }
     }
 }

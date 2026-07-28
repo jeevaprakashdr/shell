@@ -3,7 +3,6 @@ use std::io::{self, Write};
 use std::{
     env,
     ffi::OsStr,
-    fs::File,
     io::BufWriter,
     os::unix::{ffi::OsStrExt, process::CommandExt},
     path::Path,
@@ -57,7 +56,7 @@ fn main() {
                     cli.write_line(&output);
                 }
 
-                if let Some(path) = cmd.error_redirection_path {
+                if let Some(path) = cmd.error_redirection.path {
                     let _ = file_utility::create_file_with_directories(
                         String::from_utf8(path.to_vec()).unwrap(),
                         false,
@@ -125,10 +124,10 @@ fn main() {
                     cli.write(&String::from_utf8(output.stdout).unwrap());
                 }
 
-                if let Some(path) = cmd.error_redirection_path {
+                if let Some(path) = cmd.error_redirection.path {
                     let file = file_utility::create_file_with_directories(
                         String::from_utf8(path.to_vec()).unwrap(),
-                        false,
+                        cmd.error_redirection.append_content,
                     )
                     .unwrap();
                     let mut writer = BufWriter::new(file);
