@@ -42,8 +42,12 @@ fn main() {
                     .collect::<Vec<_>>()
                     .join("");
 
-                if let Some(path) = cmd.redirection_path {
-                    let file = File::create(String::from_utf8(path.to_vec()).unwrap()).unwrap();
+                if let Some(path) = cmd.output_redirection.path {
+                    let file = file_utility::create_file_with_directories(
+                        String::from_utf8(path.to_vec()).unwrap(),
+                        cmd.output_redirection.append_content,
+                    )
+                    .unwrap();
                     let mut writer = BufWriter::new(file);
 
                     writer.write_all(output.as_bytes()).unwrap();
@@ -56,6 +60,7 @@ fn main() {
                 if let Some(path) = cmd.error_redirection_path {
                     let _ = file_utility::create_file_with_directories(
                         String::from_utf8(path.to_vec()).unwrap(),
+                        false,
                     );
                 }
             }
@@ -106,8 +111,13 @@ fn main() {
                     .output()
                     .unwrap();
 
-                if let Some(path) = cmd.redirection_path {
-                    let file = File::create(String::from_utf8(path.to_vec()).unwrap()).unwrap();
+                if let Some(path) = cmd.output_redirection.path {
+                    let file = file_utility::create_file_with_directories(
+                        String::from_utf8(path.to_vec()).unwrap(),
+                        cmd.output_redirection.append_content,
+                    )
+                    .unwrap();
+
                     let mut writer = BufWriter::new(file);
                     writer.write_all(&output.stdout).unwrap();
                     writer.flush().unwrap();
@@ -118,6 +128,7 @@ fn main() {
                 if let Some(path) = cmd.error_redirection_path {
                     let file = file_utility::create_file_with_directories(
                         String::from_utf8(path.to_vec()).unwrap(),
+                        false,
                     )
                     .unwrap();
                     let mut writer = BufWriter::new(file);

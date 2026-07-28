@@ -1,10 +1,25 @@
 use crate::path;
 
 #[derive(Debug)]
+pub(crate) struct Redirection {
+    pub path: Option<Box<[u8]>>,
+    pub append_content: bool,
+}
+
+impl Default for Redirection {
+    fn default() -> Self {
+        Self {
+            path: Default::default(),
+            append_content: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Command {
     pub name: Vec<u8>,
     pub args: Vec<Box<[u8]>>,
-    pub redirection_path: Option<Box<[u8]>>,
+    pub output_redirection: Redirection,
     pub error_redirection_path: Option<Box<[u8]>>,
 }
 
@@ -12,13 +27,13 @@ impl Command {
     pub(crate) fn new(
         name: Vec<u8>,
         args: Vec<Box<[u8]>>,
-        redirection_path: Option<Box<[u8]>>,
+        output_redirection: Redirection,
         error_redirection_path: Option<Box<[u8]>>,
     ) -> Self {
         Self {
             name,
             args,
-            redirection_path,
+            output_redirection,
             error_redirection_path,
         }
     }

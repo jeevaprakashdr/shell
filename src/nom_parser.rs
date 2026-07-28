@@ -10,7 +10,7 @@ use nom::{
     sequence::preceded,
 };
 
-use crate::cmd::Command;
+use crate::cmd::{Command, Redirection};
 
 fn alphanumeric_with_special_chars<'a>(
     allowed_specials: &'a [u8],
@@ -40,7 +40,7 @@ fn arguments(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
     alt((
         map(multispace1, |_| Box::from(" ".as_bytes())),
         list_directory_or_file,
-        unquoted_with("_".as_bytes()),
+        unquoted_with("_:".as_bytes()),
         unquoted,
         absolute_path("-_.".as_bytes()),
         relative_path,
@@ -68,14 +68,29 @@ fn error_redirection_argument(input: &[u8]) -> IResult<&[u8], Option<Box<[u8]>>>
     }
 }
 
-fn redirection_argument(input: &[u8]) -> IResult<&[u8], Option<Box<[u8]>>> {
+fn redirection_argument(input: &[u8]) -> IResult<&[u8], Redirection> {
+    let append_content = match preceded(
+        alt((tag("1>>"), tag(">>"))),
+        alphanumeric_with_special_chars(" /_.".as_bytes()),
+    )
+    .parse(input)
+    {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+
     let (i, o) = preceded(
-        alt((tag(">"), tag("1>"))),
+        alt((tag("1>>"), tag(">>"), tag("1>"), tag(">"))),
         alphanumeric_with_special_chars(" /_.".as_bytes()),
     )
     .parse(input)?;
 
-    Ok((i, Some(Box::from(o.trim_ascii()))))
+    let redirection = Redirection {
+        path: Some(Box::from(o.trim_ascii())),
+        append_content,
+    };
+
+    Ok((i, redirection))
 }
 
 fn path_component<'a>(
@@ -333,26 +348,37 @@ fn double_quoted_absolute_path(input: &[u8]) -> IResult<&[u8], Box<[u8]>> {
 pub(crate) fn parse(input: &[u8]) -> IResult<&[u8], Command> {
     let (i, c) = command.parse(input.trim_ascii())?;
     if i.is_empty() {
-        return Ok((i, Command::new(c.to_vec(), Vec::new(), None, None)));
+        return Ok((
+            i,
+            Command::new(c.to_vec(), Vec::new(), Redirection::default(), None),
+        ));
     }
 
     let (i, args) = many0(arguments).parse(i.trim_ascii())?;
     if i.is_empty() || i == "/".as_bytes() {
-        return Ok((i, Command::new(c.to_vec(), args, None, None)));
+        return Ok((
+            i,
+            Command::new(c.to_vec(), args, Redirection::default(), None),
+        ));
     }
 
     let (i, error_redirection_path) = error_redirection_argument.parse(i.trim_ascii())?;
     if error_redirection_path.is_some() {
         return Ok((
             i,
-            Command::new(c.to_vec(), args, None, error_redirection_path),
+            Command::new(
+                c.to_vec(),
+                args,
+                Redirection::default(),
+                error_redirection_path,
+            ),
         ));
     }
 
-    let (i, redirection_path) = redirection_argument.parse(i.trim_ascii())?;
+    let (i, output_redirection) = redirection_argument.parse(i.trim_ascii())?;
     Ok((
         i,
-        Command::new(c.to_vec(), args, redirection_path, error_redirection_path),
+        Command::new(c.to_vec(), args, output_redirection, error_redirection_path),
     ))
 }
 
@@ -738,8 +764,8 @@ mod tests {
             assert!(r.is_ok());
 
             let r = r.unwrap();
-            assert!(r.1.is_some());
-            assert_eq!(r.1.unwrap().as_ref(), expected.as_bytes());
+            assert!(r.1.path.is_some());
+            assert_eq!(r.1.path.unwrap().as_ref(), expected.as_bytes());
         }
     }
 
@@ -814,9 +840,9 @@ mod tests {
                 expected_args.as_slice()
             );
             if expected_redirection_path.is_some() {
-                assert!(command.redirection_path.is_some());
+                assert!(command.output_redirection.path.is_some());
                 assert_eq!(
-                    command.redirection_path.unwrap(),
+                    command.output_redirection.path.unwrap(),
                     expected_redirection_path.unwrap().into()
                 );
             }
